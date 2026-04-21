@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -387,6 +387,729 @@
             if(btn) {
                 btn.innerText = "Error";
                 btn.style.background = "#ef4444"; // red
+                setTimeout(() => {
+                    btn.innerText = "Save";
+                    btn.style.background = "#10b981"; 
+                }, 2000);
+            }
+        }
+        calculateNet();
+    }
+
+    function setNextBillNo() {
+        if(document.getElementById('editId').value !== "") return;
+        let maxBill = bills.length > 0 ? Math.max(...bills.map(b => b.billNo)) : 0;
+        document.getElementById('billNo').value = maxBill + 1;
+    }
+
+    function autoFillRate() {
+        const type = document.getElementById('fuelType').value;
+        const rateInput = document.getElementById('rate');
+        if(type === 'Diesel') rateInput.value = 92.31;
+        else if(type === 'Petrol') rateInput.value = 105.71;
+    }
+
+    async function saveRecord() {
+        const editId = document.getElementById('editId').value;
+        const bNo = parseInt(document.getElementById('billNo').value);
+        const bDate = document.getElementById('billDate').value;
+        const vNo = document.getElementById('vehicleNo').value;
+        const fType = document.getElementById('fuelType').value;
+        const qnty = parseFloat(document.getElementById('qnty').value);
+        const rate = parseFloat(document.getElementById('rate').value);
+
+        if(!bNo || !bDate || !vNo || !fType || isNaN(qnty) || isNaN(rate)) { alert("Fill all fields!"); return; }
+
+        const existingBill = bills.find(b => b.billNo === bNo && b.id !== (editId ? parseInt(editId) : null));
+        if (existingBill) {
+            alert(`Error: Bill No ${bNo} already exists in the system!\nPlease use a different number or edit the existing record.`);
+            return; 
+        }
+
+        const record = { id: editId ? parseInt(editId) : Date.now(), billNo: bNo, date: bDate, vehicleNo: vNo, fuelType: fType, qnty: qnty, rate: rate, amount: qnty * rate };
+
+        try { await fetch('/api/bills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) }); } 
+        catch(e) { localStorage.setItem('electionFuelData', JSON.stringify([...bills.filter(b=>b.id !== record.id), record])); }
+
+        bills = bills.filter(b => b.id !== record.id); 
+        bills.push(record);
+
+        document.getElementById('editId').value = "";
+        document.getElementById('submitBtn').innerText = "+ Add Bill";
+        document.getElementById('submitBtn').classList.remove('editing');
+        document.getElementById('formTitle').innerText = "Record Entry";
+        document.getElementById('vehicleNo').value = '';
+        document.getElementById('qnty').value = '';
+        
+        renderData();
+        setNextBillNo();
+        
+        if(window.innerWidth < 768) closeMobileForm(null, true);
+        else document.getElementById('vehicleNo').focus();
+    }
+
+    document.getElementById('entryForm').addEventListener('keypress', function(e) { if (e.key === 'Enter') { e.preventDefault(); saveRecord(); } });
+
+    function editRecord(id) {
+        const record = bills.find(b => b.id === id);
+        if(!record) return;
+        document.getElementById('editId').value = record.id;
+        document.getElementById('billNo').value = record.billNo;
+        document.getElementById('billDate').value = record.date;
+        document.getElementById('vehicleNo').value = record.vehicleNo;
+        document.getElementById('fuelType').value = record.fuelType;
+        document.getElementById('qnty').value = record.qnty;
+        document.getElementById('rate').value = record.rate;
+        
+        document.getElementById('formTitle').innerText = "Edit Record";
+        let btn = document.getElementById('submitBtn');
+        btn.innerText = "💾 Save Edit";
+        btn.classList.add('editing');
+        
+        openMobileForm();
+        window.scrollTo(0,0);
+    }
+
+    async function deleteRecord(id) {
+        if(confirm("Delete this bill?")) {
+            try { await fetch('/api/bills', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) }); } 
+            catch(e) {}
+            bills = bills.filter(b => b.id !== id);
+            localStorage.setItem('electionFuelData', JSON.stringify(bills));
+            renderData();
+            setNextBillNo();
+        }
+    }
+
+    function renderData() {
+        bills.sort((a, b) => a.billNo - b.billNo);
+        let maxBill = bills.length > 0 ? Math.max(...bills.map(b => b.billNo)) : 0;
+        let numPages = Math.max(1, Math.ceil(maxBill / PAGE_SIZE)); 
+
+        let tabsHTML = `<button class="tab-btn ${activeTabId==='summary'?'active':''}" data-target="summary" onclick="switchTab('summary', this)">📊 Dashboard Summary</button>`;
+        for(let i=0; i<numPages; i++) {
+            let start = i * PAGE_SIZE + 1;
+            let end = (i + 1) * PAGE_SIZE;
+            let tid = `sheet${i+1}`;
+            tabsHTML += `<button class="tab-btn ${activeTabId===tid?'active':''}" data-target="${tid}" onclick="switchTab('${tid}', this)">Bills ${start}-${end}</button>`;
+        }
+        document.getElementById('tabsContainer').innerHTML = tabsHTML;
+
+        let summaryCardsHTML = "";
+        let sheetsHTML = "";
+        pageTotals = Array(numPages).fill(null).map(() => ({q: 0, a: 0}));
+        let tbHTML = Array(numPages).fill("");
+
+        for(let i=0; i<numPages; i++) {
+            let tid = `sheet${i+1}`;
+            sheetsHTML += `
+            <div id="${tid}" class="tab-content ${activeTabId===tid?'active':''}">
+                <div class="table-wrapper">
+                    <table id="table${i+1}">
+                        <thead><tr><th>Bill No</th><th>Date</th><th>Vehicle</th><th>Fuel</th><th>Qnty (L)</th><th>Rate (₹)</th><th>Amount (₹)</th><th>Actions</th></tr></thead>
+                        <tbody id="tb${i+1}"></tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
+        document.getElementById('sheetsContainer').innerHTML = sheetsHTML;
+
+        bills.forEach(b => {
+            let pageIdx = Math.floor((b.billNo - 1) / PAGE_SIZE);
+            if(pageIdx >= numPages) pageIdx = numPages - 1; 
+            
+            pageTotals[pageIdx].q += b.qnty; 
+            pageTotals[pageIdx].a += b.amount;
+
+            tbHTML[pageIdx] += `<tr class="${b.fuelType}">
+                <td><strong>${b.billNo}</strong></td><td>${b.date}</td><td>${b.vehicleNo}</td>
+                <td>${b.fuelType}</td><td>${b.qnty.toFixed(2)}</td><td>${b.rate.toFixed(2)}</td>
+                <td><strong>${b.amount.toFixed(2)}</strong></td>
+                <td>
+                    <button class="action-btn edit-btn" onclick="editRecord(${b.id})">Edit</button>
+                    <button class="action-btn del-btn" onclick="deleteRecord(${b.id})">Del</button>
+                </td>
+            </tr>`;
+        });
+
+        for(let i=0; i<numPages; i++) {
+            let start = i * PAGE_SIZE + 1;
+            let end = (i + 1) * PAGE_SIZE;
+            
+            document.getElementById(`tb${i+1}`).innerHTML = tbHTML[i] + 
+                (pageTotals[i].q > 0 ? `<tr class="total-row"><td colspan="4" style="text-align:right">PAGE TOTAL:</td><td>${pageTotals[i].q.toFixed(2)}</td><td></td><td>${pageTotals[i].a.toFixed(2)}</td><td></td></tr>` : "");
+            
+            summaryCardsHTML += `
+            <div class="summary-card">
+                <h4>Bills ${start} - ${end}</h4>
+                <p><strong>${pageTotals[i].q.toFixed(2)} L</strong> | <strong>₹${pageTotals[i].a.toFixed(2)}</strong></p>
+            </div>`;
+        }
+
+        document.getElementById('pageTotalsGrid').innerHTML = summaryCardsHTML;
+        currentGrandTotal = pageTotals.reduce((sum, page) => sum + page.a, 0);
+        document.getElementById('grandTotalText').innerText = `₹${currentGrandTotal.toFixed(2)}`;
+        
+        checkMissingBills();
+        calculateNet();
+    }
+
+    function calculateNet() {
+        let advance = parseFloat(document.getElementById('advancePaid').value) || 0;
+        let preNet = currentGrandTotal - advance;
+        let finalNet = Math.round(preNet);
+        let roundingValue = finalNet - preNet;
+
+        document.getElementById('roundingOff').value = roundingValue.toFixed(2);
+        document.getElementById('netPayableText').innerText = `₹${finalNet.toFixed(2)}`;
+    }
+
+    // PRINT MODAL LOGIC
+    function openPrintModal() {
+        let printTableHtml = "";
+        let advance = parseFloat(document.getElementById('advancePaid').value) || 0;
+        let preNet = currentGrandTotal - advance;
+        let finalNet = Math.round(preNet);
+        let roundingValue = finalNet - preNet;
+        let totalQnty = pageTotals.reduce((sum, page) => sum + page.q, 0);
+
+        pageTotals.forEach((page, index) => {
+            if(page.q > 0) {
+                let start = index * PAGE_SIZE + 1;
+                let end = (index + 1) * PAGE_SIZE;
+                printTableHtml += `<tr>
+                    <td style="text-align: left;"><div contenteditable="true" class="editable-field">Page ${index + 1} (Bills ${start} - ${end})</div></td>
+                    <td>${page.q.toFixed(2)}</td>
+                    <td>${page.a.toFixed(2)}</td>
+                </tr>`;
+            }
+        });
+
+        // Add summary rows
+        printTableHtml += `
+            <tr style="font-weight:bold; background:#f8fafc;">
+                <td style="text-align: left;">GROSS TOTAL</td>
+                <td>${totalQnty.toFixed(2)}</td>
+                <td>${currentGrandTotal.toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Rounding Off (+/-)</td>
+                <td>${roundingValue.toFixed(2)}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Less Advance Paid</td>
+                <td>${advance.toFixed(2)}</td>
+            </tr>
+            <tr style="font-weight:bold; font-size:1.1rem; color:var(--primary);">
+                <td colspan="2">FINAL NET PAYABLE</td>
+                <td>₹${finalNet.toFixed(2)}</td>
+            </tr>
+        `;
+
+        document.getElementById('printTableBody').innerHTML = printTableHtml;
+        document.getElementById('printModal').classList.add('active');
+    }
+    
+    function closePrintModal() {
+        document.getElementById('printModal').classList.remove('active');
+    }
+
+    function checkMissingBills() {
+        if(bills.length === 0) return;
+        let max = Math.max(...bills.map(b => b.billNo));
+        let existing = new Set(bills.map(b => b.billNo));
+        let missing = [];
+        for(let i=1; i<=max; i++) { if(!existing.has(i)) missing.push(i); }
+        if(missing.length > 0) {
+            document.getElementById('missingPanel').style.display = "block";
+            document.getElementById('missingList').innerText = "Missing Bill Numbers: " + missing.join(", ");
+        } else { document.getElementById('missingPanel').style.display = "none"; }
+    }
+
+    function switchTab(tabId, btn) {
+        activeTabId = tabId;
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        if(btn) btn.classList.add('active');
+    }
+
+    function exportToExcel() {
+        let wb = XLSX.utils.book_new();
+        const formatForExcel = (arr) => {
+            let data = arr.map(b => ({"Bill No": b.billNo, "Date": b.date, "Vehicle No": b.vehicleNo, "Fuel Type": b.fuelType, "Quantity Ltr": b.qnty, "Rate": b.rate, "Amount": b.amount}));
+            let tQ = data.reduce((s, r) => s + r["Quantity Ltr"], 0), tA = data.reduce((s, r) => s + r.Amount, 0);
+            data.push({"Bill No": "TOTAL", "Date": "", "Vehicle No": "", "Fuel Type": "", "Quantity Ltr": tQ, "Rate": "", "Amount": tA});
+            return data;
+        };
+        let numPages = pageTotals.length;
+        for(let i=0; i<numPages; i++) {
+            let start = i * PAGE_SIZE + 1;
+            let end = (i + 1) * PAGE_SIZE;
+            let pageBills = bills.filter(b => b.billNo >= start && b.billNo <= end);
+            if(pageBills.length > 0) {
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatForExcel(pageBills)), `Bills ${start}-${end}`);
+            }
+        }
+        let advance = parseFloat(document.getElementById('advancePaid').value) || 0;
+        let preNet = currentGrandTotal - advance;
+        let finalNet = Math.round(preNet);
+        let roundingValue = finalNet - preNet;
+        let totalQnty = pageTotals.reduce((sum, page) => sum + page.q, 0);
+
+        let frontPageData = [["M/S. BAHAR SERVICE STATION (CC-220994)"], ["CONSOLIDATED DIESEL & LUB SUPPLY RECORD"], ["PURPOSE / EVENT: ___________________________________"], [], ["PAGE NO", "QUANTITY LTR", "RATE", "AMOUNT"]];
+        pageTotals.forEach((page, index) => {
+            if(page.q > 0) {
+                let start = index * PAGE_SIZE + 1;
+                let end = (index + 1) * PAGE_SIZE;
+                let pageBills = bills.filter(b => b.billNo >= start && b.billNo <= end);
+                let uniformRate = pageBills.every(b => b.rate === pageBills[0].rate) ? pageBills[0].rate : "Var.";
+                frontPageData.push([index + 1, page.q, uniformRate, page.a]);
+            }
+        });
+        frontPageData.push(["TOTAL", totalQnty, "", currentGrandTotal]);
+        frontPageData.push(["Rounding Off", "", "", roundingValue]);
+        frontPageData.push(["Less Advance", "", "", advance]);
+        frontPageData.push(["NET AMOUNT", "", "", finalNet]);
+
+        let ws = XLSX.utils.aoa_to_sheet(frontPageData);
+        ws['!cols'] = [{wch: 25}, {wch: 15}, {wch: 12}, {wch: 15}];
+        XLSX.utils.book_append_sheet(wb, ws, "Master Admin Print");
+        XLSX.writeFile(wb, "Bahar_Station_Admin_Log.xlsx");
+    }
+
+    init();
+</script>
+</body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bahar Station - Admin Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        :root {
+            --primary: #004b87; --primary-light: #005bb5; --accent: #fdb813;
+            --bg-color: #f4f7f9; --text-main: #1e293b; --text-muted: #64748b;
+            --petrol-bg: #dcfce7; --diesel-bg: #dbeafe; --lub-bg: #fef08a;
+            --danger: #ef4444; --warning: #f59e0b;
+        }
+
+        body { font-family: 'Poppins', sans-serif; background: var(--bg-color); margin: 0; color: var(--text-main); }
+        
+        header { background: white; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.2rem; align-items: center; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-bottom: 4px solid var(--accent); position: relative; }
+        @media (min-width: 768px) { header { flex-direction: row; justify-content: space-between; padding: 1.2rem 2.5rem; text-align: left; } }
+        
+        .header-brand { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+        @media (min-width: 768px) { .header-brand { flex-direction: row; align-items: center; } }
+        .bpcl-logo { width: 60px; height: auto; object-fit: contain; }
+        @media (min-width: 768px) { .bpcl-logo { width: 70px; } }
+
+        .brand-text { display: flex; flex-direction: column; gap: 0.2rem; }
+        .brand-text h1 { margin: 0; font-size: 1.4rem; font-weight: 800; color: var(--primary); letter-spacing: 0.5px; text-transform: uppercase;}
+        @media (min-width: 768px) { .brand-text h1 { font-size: 1.6rem; } }
+        
+        .pump-details { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; color: #475569; }
+        @media (min-width: 768px) { .pump-details { justify-content: flex-start; font-size: 0.9rem; } }
+        
+        .admin-tag { background: #10b981; color: white; padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 700; letter-spacing: 0.5px; font-size: 0.75rem;}
+        
+        .header-actions { display: flex; gap: 0.5rem; flex-direction: column; width: 100%;}
+        @media (min-width: 768px) { .header-actions { flex-direction: row; width: auto; } }
+
+        .btn-export { background: var(--primary); color: white; padding: 0.8rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; width: 100%; font-size: 0.95rem; transition: background 0.3s;}
+        .btn-export:hover { background: var(--primary-light); }
+        .btn-print { background: var(--warning); color: black; }
+        .btn-print:hover { background: #d97706; }
+        @media (min-width: 768px) { .btn-export { width: auto; padding: 0.6rem 1.2rem; } }
+
+        main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+        @media (min-width: 768px) { main { padding: 1.5rem; } }
+
+        /* Form Overlay & UI Elements */
+        .mobile-add-btn { display: block; width: 100%; padding: 1rem; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; margin-bottom: 1.5rem; cursor: pointer; box-shadow: 0 4px 6px rgba(0,75,135,0.2); }
+        @media (min-width: 768px) { .mobile-add-btn { display: none; } }
+        .form-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: flex-end; justify-content: center; }
+        .form-overlay.active { display: flex; animation: fadeIn 0.2s; }
+        .form-panel { background: white; padding: 1.5rem; width: 100%; border-radius: 20px 20px 0 0; animation: slideUp 0.3s ease-out; position: relative; padding-bottom: 2rem;}
+        .form-header-mobile { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;}
+        .form-header-mobile h3 { margin: 0; color: var(--primary); font-size: 1.2rem; }
+        .close-btn { background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; line-height: 1;}
+        .form-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: end; }
+        .input-group label { display: block; font-size: 0.85rem; font-weight: 600; color: #64748b; margin-bottom: 0.4rem; }
+        .input-group input, .input-group select { width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 1rem; font-family: inherit;}
+        .btn-submit { background: var(--primary); color: white; border: none; padding: 1rem; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; margin-top: 0.5rem;}
+        .btn-submit.editing { background: var(--warning); color: black; }
+
+        @media (min-width: 768px) { 
+            .form-overlay { display: block; position: static; background: none; z-index: auto; animation: none;}
+            .form-panel { max-width: none; border-radius: 10px; margin-bottom: 1.5rem; border-left: 5px solid var(--primary); box-shadow: 0 4px 6px rgba(0,0,0,0.05); animation: none; padding: 1.5rem;}
+            .form-header-mobile { display: none; }
+            .form-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+            .input-group input, .input-group select { padding: 0.6rem; font-size: 0.9rem;}
+            .btn-submit { padding: 0.6rem; font-size: 0.95rem; margin-top: 0;}
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Tabs & Summaries */
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .tab-btn { padding: 0.8rem 1rem; background: white; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600; cursor: pointer; flex-grow: 1; text-align: center; color: var(--text-muted);}
+        @media (min-width: 768px) { .tab-btn { flex-grow: 0; padding: 0.7rem 1.2rem; } }
+        .tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 4px 6px rgba(0,75,135,0.2); }
+        .tab-content { display: none; background: white; padding: 1rem; border-radius: 10px; border: 1px solid #e2e8f0; }
+        @media (min-width: 768px) { .tab-content { padding: 1.5rem; } }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+
+        .summary-container { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        @media (min-width: 1024px) { .summary-container { grid-template-columns: 2fr 1fr; gap: 2rem;} }
+        .page-totals-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1.5rem;}
+        @media (min-width: 480px) { .page-totals-grid { grid-template-columns: 1fr 1fr; } }
+        .summary-card { padding: 1.2rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; border-left: 4px solid var(--primary);}
+        .summary-card h4 { margin: 0 0 0.5rem 0; color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase;}
+        .summary-card p { margin: 0; font-size: 1.1rem; color: var(--text-main); font-weight: 600;}
+
+        .reconciliation-panel { background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 2px solid #e2e8f0; height: fit-content;}
+        .recon-row { display: flex; justify-content: space-between; margin-bottom: 0.8rem; align-items: center; font-weight: 500; color: var(--text-muted);}
+        .recon-row input { width: 100px; padding: 0.5rem; text-align: right; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: bold; background: white; font-family: inherit;}
+        .recon-row span:last-child { color: var(--text-main); font-weight: 700; font-size: 1.1rem;}
+        .net-total { font-size: 1.2rem; color: var(--primary); font-weight: 800; border-top: 2px dashed #cbd5e1; padding-top: 1rem; margin-top: 1rem; }
+        .net-total span:last-child { color: var(--primary); font-size: 1.5rem; }
+        .missing-bills-panel { padding: 1rem; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; color: #be123c; font-size: 0.85rem;}
+
+        /* Tables */
+        .table-wrapper { width: 100%; overflow-x: auto; border-radius: 6px;}
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 700px; }
+        @media (min-width: 768px) { table { font-size: 0.9rem; } }
+        th, td { padding: 0.9rem 0.8rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; color: var(--text-muted); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.5px;}
+        tr.Petrol { background: var(--petrol-bg); }
+        tr.Diesel { background: var(--diesel-bg); }
+        tr.Lubricant { background: var(--lub-bg); }
+        .total-row { font-weight: 700; background: #f1f5f9; color: var(--primary);}
+        button.action-btn { color: white; border: none; padding: 0.4rem 0.6rem; border-radius: 4px; cursor: pointer; margin-right: 0.2rem; font-weight: 600; font-family: inherit;}
+        .edit-btn { background: var(--warning); color: black;}
+        .del-btn { background: var(--danger); }
+
+        /* Skeleton Loading Styles */
+        @keyframes skeleton-pulse {
+            0% { background-color: #cbd5e1; opacity: 0.6; }
+            100% { background-color: #e2e8f0; opacity: 1; }
+        }
+        .skeleton {
+            animation: skeleton-pulse 0.8s linear infinite alternate;
+            border-radius: 6px;
+        }
+        .skel-tab { width: 140px; height: 42px; display: inline-block; }
+        .skel-card { height: 80px; width: 100%; border-radius: 8px; }
+        .skel-table-row { height: 40px; width: 100%; margin-bottom: 8px; }
+
+        /* Print Modal Styles */
+        .print-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; padding: 1rem;}
+        .print-modal.active { display: flex; }
+        .print-container { background: white; padding: 2rem; border-radius: 10px; width: 100%; max-width: 850px; max-height: 90vh; overflow-y: auto;}
+        .print-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 2px solid var(--primary); padding-bottom: 1rem;}
+        .print-header h2 { margin: 0; color: var(--primary); }
+        
+        .editable-field { border: 1px dashed transparent; padding: 0.2rem; transition: 0.3s; border-radius: 4px; outline: none; }
+        .editable-field:hover, .editable-field:focus { border-color: #cbd5e1; background: #f8fafc; }
+        .editable-field:empty:before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; display: block;}
+
+        .print-summary-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+        .print-summary-table th, .print-summary-table td { border: 1px solid #94a3b8; padding: 0.8rem; text-align: right; }
+        .print-summary-table th { background: #f1f5f9; text-align: center; color: #1e293b;}
+        .print-summary-table td:first-child { text-align: left; font-weight: bold;}
+        .print-actions { display: flex; justify-content: flex-end; gap: 1rem; }
+
+        /* Highly Optimized A4 Print CSS */
+        @media print {
+            @page { size: A4 portrait; margin: 15mm; }
+            body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            header, main { display: none !important; }
+            .print-modal { position: static !important; display: block !important; background: white !important; padding: 0 !important; }
+            .print-container { width: 100% !important; max-width: 100% !important; max-height: none !important; overflow: visible !important; padding: 0 !important; box-shadow: none !important; }
+            .no-print { display: none !important; }
+            .editable-field { border: none !important; padding: 0 !important; background: transparent !important; }
+            .print-summary-table { width: 100%; border-collapse: collapse !important; }
+            .print-summary-table th, .print-summary-table td { border: 1px solid #94a3b8 !important; padding: 8px !important; }
+            .print-summary-table th { background: #e2e8f0 !important; }
+            .print-header { display: none !important; } 
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-brand">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Official_BPCL_LOGO.jpg" alt="BPCL Logo" class="bpcl-logo">
+        <div class="brand-text">
+            <h1>BAHAR SERVICE STATION</h1>
+            <div class="pump-details">
+                <span>CC-220994</span>
+                <span style="color: #cbd5e1;">|</span>
+                <span class="admin-tag">ADMINISTRATOR</span>
+            </div>
+        </div>
+    </div>
+    <div class="header-actions">
+        <button class="btn-export btn-print" onclick="openPrintModal()">🖨️ Print Final Bill</button>
+        <button class="btn-export" onclick="exportToExcel()">📥 Download Excel</button>
+    </div>
+</header>
+
+<main>
+    <button class="mobile-add-btn" onclick="openMobileForm()">+ Add New Bill</button>
+
+    <div id="formOverlay" class="form-overlay" onclick="closeMobileForm(event)">
+        <div class="form-panel">
+            <div class="form-header-mobile">
+                <h3 id="formTitle">Record Entry</h3>
+                <button class="close-btn" onclick="closeMobileForm(event, true)">×</button>
+            </div>
+            
+            <input type="hidden" id="editId" value="">
+            <div class="form-grid" id="entryForm">
+                <div class="input-group">
+                    <label>Bill No</label>
+                    <input type="number" id="billNo" required>
+                </div>
+                <div class="input-group">
+                    <label>Date</label>
+                    <input type="date" id="billDate" required>
+                </div>
+                <div class="input-group">
+                    <label>Vehicle No</label>
+                    <input type="text" id="vehicleNo" placeholder="WB..." required>
+                </div>
+                <div class="input-group">
+                    <label>Fuel Type</label>
+                    <select id="fuelType" onchange="autoFillRate()" required>
+                        <option value="" disabled selected>Select Fuel...</option>
+                        <option value="Diesel">Diesel</option>
+                        <option value="Petrol">Petrol</option>
+                        <option value="Lubricant">Lubricant</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Quantity (Ltrs)</label>
+                    <input type="number" step="0.01" id="qnty" required>
+                </div>
+                <div class="input-group">
+                    <label>Rate (₹)</label>
+                    <input type="number" step="0.01" id="rate" required>
+                </div>
+                <div class="input-group">
+                    <button type="button" id="submitBtn" class="btn-submit" onclick="saveRecord()">+ Add Bill</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabs" id="tabsContainer"></div>
+
+    <div id="summary" class="tab-content active">
+        <div class="summary-container">
+            <div>
+                <div class="page-totals-grid" id="pageTotalsGrid"></div>
+                <div class="missing-bills-panel" id="missingPanel" style="display:none;">
+                    <strong>⚠️ Integrity Check:</strong> <span id="missingList"></span>
+                </div>
+            </div>
+            
+            <div class="reconciliation-panel">
+                <h3 style="margin-top:0; color:#004b87; font-size: 1.1rem; text-transform: uppercase;">Admin Reconciliation</h3>
+                <div class="recon-row">
+                    <span>Gross Total:</span>
+                    <span id="grandTotalText">₹0.00</span>
+                </div>
+                <div class="recon-row">
+                    <span>Less Advance Paid:</span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="number" step="0.01" id="advancePaid" value="0.00" oninput="calculateNet()">
+                        <button id="saveAdvBtn" class="action-btn" style="background: #10b981; margin: 0; padding: 0.5rem 1rem;" onclick="saveAdvanceSettings()">Save</button>
+                    </div>
+                </div>
+                <div class="recon-row">
+                    <span>Auto-Rounding (+/-):</span>
+                    <input type="number" id="roundingOff" readonly title="Automatically rounds to nearest Rupee" style="background: #e2e8f0; color: #64748b; border: none;">
+                </div>
+                <div class="recon-row net-total">
+                    <span>FINAL NET PAYABLE:</span>
+                    <span id="netPayableText">₹0.00</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sheetsContainer"></div>
+
+</main>
+
+<div id="printModal" class="print-modal">
+    <div class="print-container">
+        <div class="print-header no-print">
+            <h2>Generate Official Letter</h2>
+            <button class="close-btn" onclick="closePrintModal()">×</button>
+        </div>
+        
+        <div id="printPrintableArea">
+            
+            <div style="display: flex; align-items: center; justify-content: center; position: relative; border-bottom: 3px solid var(--primary); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Official_BPCL_LOGO.jpg" alt="BPCL" style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 80px; height: auto;">
+                <div style="text-align: center; width: 100%; padding: 0 90px;">
+                    <h1 style="margin:0; color:var(--primary); font-size: 1.6rem; font-weight: 800; letter-spacing: 1px;">M/S. BAHAR SERVICE STATION</h1>
+                    <p style="margin:4px 0 2px 0; font-weight: 700; font-size: 1rem; color: #1e293b;">DEALER: BHARAT PETROLEUM CORP LTD.</p>
+                    <p style="margin:2px 0; font-size: 0.85rem; color: #334155;">VILL-DEVOKE, P.O.MAMUDPUR, P.S.SHIBDASPUR, DIST-N24 PARGANAS, PIN 743166, WB</p>
+                    <p style="margin:2px 0; font-size: 0.85rem; color: #334155;">CONTACT - 7018579966, 9088086294</p>
+                    <p style="margin:2px 0; font-size: 0.85rem; color: #334155;">EMAIL - BAHARSERVICESTATION@GMAIL.COM</p>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 1.5rem; font-size: 0.95rem; font-weight: 600;">
+                <div contenteditable="true" class="editable-field" id="printRefNo" data-placeholder="Ref No: [Enter Ref Number]">Ref No: ________________</div>
+                <div contenteditable="true" class="editable-field" id="printDate"></div>
+            </div>
+
+            <div style="margin-bottom: 1.5rem; font-size: 0.95rem;">
+                <div contenteditable="true" class="editable-field" style="line-height: 1.6; font-weight: 500;" data-placeholder="To,&#10;[Enter Designation]&#10;[Enter Organization/Department]&#10;[Enter Address Line 1]&#10;[Enter Address Line 2]">
+                    <strong>To,</strong><br>
+                    [Enter Designation],<br>
+                    [Enter Organization/Department],<br>
+                    [Enter Address Line 1],<br>
+                    [Enter Address Line 2].
+                </div>
+            </div>
+
+            <div contenteditable="true" class="editable-field" style="margin-bottom: 1.5rem; font-size: 0.95rem; text-decoration: underline; font-weight: 700;" data-placeholder="Subject: [Enter Subject Here]">Subject: [Enter Subject / Purpose of Submission Here]</div>
+
+            <div contenteditable="true" class="editable-field" style="margin-bottom: 2rem; line-height: 1.6; font-size: 0.95rem;" data-placeholder="Sir/Madam, ...">
+                Sir / Madam,<br><br>
+                [Enter your official remarks, event description, or context for the fuel supply here...]
+            </div>
+            
+            <table class="print-summary-table">
+                <thead>
+                    <tr>
+                        <th>Page Reference</th>
+                        <th>Total Quantity (L)</th>
+                        <th>Total Amount (₹)</th>
+                    </tr>
+                </thead>
+                <tbody id="printTableBody">
+                    </tbody>
+            </table>
+
+            <div style="margin-top: 4rem; display: flex; justify-content: space-between; font-size: 0.95rem;">
+                <div></div>
+                <div style="text-align: center;">
+                    <p style="margin: 0;">Yours faithfully,</p>
+                    <br><br><br>
+                    <strong>M/S. Bahar Service Station</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="print-actions no-print">
+            <button class="btn-export" style="background: #64748b;" onclick="closePrintModal()">Cancel</button>
+            <button class="btn-export btn-print" onclick="window.print()">🖨️ Confirm & Print</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let bills = [];
+    let currentGrandTotal = 0;
+    let pageTotals = [];
+    const PAGE_SIZE = 50;
+    let activeTabId = 'summary';
+
+    function openMobileForm() { document.getElementById('formOverlay').classList.add('active'); document.body.style.overflow = 'hidden'; }
+    function closeMobileForm(e, force = false) { if (force || e.target.classList.contains('form-overlay')) { document.getElementById('formOverlay').classList.remove('active'); document.body.style.overflow = 'auto'; } }
+
+    function showSkeletonLoader() {
+        // Inject skeleton into tabs
+        document.getElementById('tabsContainer').innerHTML = `
+            <div class="skeleton skel-tab"></div>
+            <div class="skeleton skel-tab"></div>
+            <div class="skeleton skel-tab"></div>
+        `;
+        
+        // Inject skeleton into the dashboard summary cards
+        document.getElementById('pageTotalsGrid').innerHTML = `
+            <div class="skeleton skel-card"></div>
+            <div class="skeleton skel-card"></div>
+        `;
+
+        // Inject skeleton rows for the tables area
+        let rowsHtml = '';
+        for(let i=0; i<6; i++) { rowsHtml += `<div class="skeleton skel-table-row"></div>`; }
+        document.getElementById('sheetsContainer').innerHTML = `
+            <div class="tab-content active" style="padding-top: 2rem;">
+                <div class="skeleton" style="height: 25px; width: 100%; margin-bottom: 1.5rem;"></div>
+                ${rowsHtml}
+            </div>
+        `;
+    }
+
+    async function init() {
+        document.getElementById('billDate').valueAsDate = new Date();
+        document.getElementById('printDate').innerHTML = "Date: " + new Date().toLocaleDateString('en-IN');
+        
+        // Trigger Skeleton Loader right before fetching begins
+        showSkeletonLoader();
+        
+        try {
+            const response = await fetch('/api/bills');
+            if(response.ok) bills = await response.json();
+            else throw new Error('Backend not connected');
+        } catch (error) { bills = JSON.parse(localStorage.getItem('electionFuelData')) || []; }
+
+        try {
+            const setRes = await fetch('/api/bills?type=settings');
+            if(setRes.ok) {
+                const settings = await setRes.json();
+                document.getElementById('advancePaid').value = settings.advance || 0;
+            }
+        } catch (error) { console.log("Failed to load advance setting."); }
+
+        // Once fetched, this removes the skeletons and renders the real data
+        renderData();
+        setNextBillNo();
+    }
+
+    async function saveAdvanceSettings() {
+        let btn = document.getElementById('saveAdvBtn');
+        if(btn) btn.innerText = "Saving...";
+        
+        let advanceVal = parseFloat(document.getElementById('advancePaid').value) || 0;
+        try {
+            const response = await fetch('/api/bills?type=settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ advance: advanceVal })
+            });
+            
+            if (!response.ok) throw new Error('Failed to save to database');
+            
+            if(btn) {
+                btn.innerText = "Saved!";
+                btn.style.background = "#059669"; 
+                setTimeout(() => {
+                    btn.innerText = "Save";
+                    btn.style.background = "#10b981"; 
+                }, 2000);
+            }
+        } catch (e) {
+            console.error(e);
+            if(btn) {
+                btn.innerText = "Error";
+                btn.style.background = "#ef4444"; 
                 setTimeout(() => {
                     btn.innerText = "Save";
                     btn.style.background = "#10b981"; 
