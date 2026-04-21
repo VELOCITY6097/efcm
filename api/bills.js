@@ -1,16 +1,12 @@
-// api/bills.js
 const { Pool } = require('pg');
 
-// Your exact Neon Database Connection String
 const DATABASE_URL = "postgresql://neondb_owner:npg_WeBqunU56xPX@ep-lucky-cloud-aozli1uh.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-});
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 export default async function handler(req, res) {
   try {
-    // Check if table exists, create if not (Helps prevent errors on first load)
+    // 1. Ensure Tables Exist
     await pool.query(`
       CREATE TABLE IF NOT EXISTS fuel_bills (
         id BIGINT PRIMARY KEY, bill_no INT, bill_date DATE,
@@ -18,7 +14,29 @@ export default async function handler(req, res) {
         qnty NUMERIC(10, 2), rate NUMERIC(10, 2), amount NUMERIC(12, 2)
       );
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key VARCHAR(50) PRIMARY KEY, 
+        setting_value NUMERIC(12, 2)
+      );
+    `);
 
+    // 2. Handle Settings (Advance Payment)
+    if (req.query.type === 'settings') {
+      if (req.method === 'GET') {
+        const { rows } = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'advance'");
+        return res.status(200).json({ advance: rows.length > 0 ? parseFloat(rows[0].setting_value) : 0 });
+      } 
+      if (req.method === 'POST') {
+        await pool.query(`
+          INSERT INTO app_settings (setting_key, setting_value) VALUES ('advance', $1) 
+          ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        `, [req.body.advance]);
+        return res.status(200).json({ success: true });
+      }
+    }
+
+    // 3. Handle Bills (Existing Logic)
     if (req.method === 'GET') {
       const { rows } = await pool.query('SELECT * FROM fuel_bills ORDER BY bill_no');
       const formatted = rows.map(r => ({
@@ -32,7 +50,10 @@ export default async function handler(req, res) {
     
     else if (req.method === 'POST') {
       const b = req.body;
-      // UPSERT logic: If ID exists (user clicked Edit), it updates. If not, it inserts.
+      const checkDuplicate = await pool.query('SELECT id FROM fuel_bills WHERE bill_no = $1', [b.billNo]);
+      if (checkDuplicate.rows.length > 0 && checkDuplicate.rows[0].id != b.id) {
+          return res.status(200).json({ success: false, message: "Duplicate" });
+      }
       await pool.query(`
         INSERT INTO fuel_bills (id, bill_no, bill_date, vehicle_no, fuel_type, qnty, rate, amount) 
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -44,14 +65,12 @@ export default async function handler(req, res) {
     } 
     
     else if (req.method === 'DELETE') {
-      const { id } = req.body;
-      await pool.query('DELETE FROM fuel_bills WHERE id = $1', [id]);
+      await pool.query('DELETE FROM fuel_bills WHERE id = $1', [req.body.id]);
       return res.status(200).json({ success: true });
     }
 
-    res.status(405).end(`Method ${req.method} Not Allowed`);
+    res.status(405).end();
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: error.message });
   }
 }
