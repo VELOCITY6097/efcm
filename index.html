@@ -719,7 +719,6 @@
 </script>
 </body>
 </html> -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -774,7 +773,6 @@
         main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
         @media (min-width: 768px) { main { padding: 1.5rem; } }
 
-        /* Form Overlay & UI Elements */
         .mobile-add-btn { display: block; width: 100%; padding: 1rem; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; margin-bottom: 1.5rem; cursor: pointer; box-shadow: 0 4px 6px rgba(0,75,135,0.2); }
         @media (min-width: 768px) { .mobile-add-btn { display: none; } }
         .form-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: flex-end; justify-content: center; }
@@ -800,7 +798,6 @@
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        /* Tabs & Summaries */
         .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
         .tab-btn { padding: 0.8rem 1rem; background: white; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600; cursor: pointer; flex-grow: 1; text-align: center; color: var(--text-muted);}
         @media (min-width: 768px) { .tab-btn { flex-grow: 0; padding: 0.7rem 1.2rem; } }
@@ -825,7 +822,6 @@
         .net-total span:last-child { color: var(--primary); font-size: 1.5rem; }
         .missing-bills-panel { padding: 1rem; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; color: #be123c; font-size: 0.85rem;}
 
-        /* Tables */
         .table-wrapper { width: 100%; overflow-x: auto; border-radius: 6px;}
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 700px; }
         @media (min-width: 768px) { table { font-size: 0.9rem; } }
@@ -839,7 +835,6 @@
         .edit-btn { background: var(--warning); color: black;}
         .del-btn { background: var(--danger); }
 
-        /* Skeleton Loading Styles */
         @keyframes skeleton-pulse {
             0% { background-color: #cbd5e1; opacity: 0.6; }
             100% { background-color: #e2e8f0; opacity: 1; }
@@ -852,7 +847,6 @@
         .skel-card { height: 80px; width: 100%; border-radius: 8px; }
         .skel-table-row { height: 40px; width: 100%; margin-bottom: 8px; }
 
-        /* Print Modal Styles */
         .print-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; padding: 1rem;}
         .print-modal.active { display: flex; }
         .print-container { background: white; padding: 2rem; border-radius: 10px; width: 100%; max-width: 850px; max-height: 90vh; overflow-y: auto;}
@@ -869,7 +863,6 @@
         .print-summary-table td:first-child { text-align: left; font-weight: bold;}
         .print-actions { display: flex; justify-content: flex-end; gap: 1rem; }
 
-        /* Highly Optimized A4 Print CSS */
         @media print {
             @page { size: A4 portrait; margin: 15mm; }
             body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1398,17 +1391,18 @@
         if(btn) btn.classList.add('active');
     }
 
-    // UPDATED EXPORT TO EXCEL LOGIC WITH FULL STYLING, BORDERS, AND DATE FILTERS
     function exportToExcel() {
         let fromDate = document.getElementById('exportFromDate').value;
         let toDate = document.getElementById('exportToDate').value;
         
-        // Apply Date Filters
         let filteredBills = [...bills];
+        
+        // 1. Filter by Date First
         if (fromDate) filteredBills = filteredBills.filter(b => b.date >= fromDate);
         if (toDate) filteredBills = filteredBills.filter(b => b.date <= toDate);
         
-        filteredBills.sort((a, b) => new Date(a.date) - new Date(b.date) || a.billNo - b.billNo);
+        // 2. Sort by Bill No strictly
+        filteredBills.sort((a, b) => a.billNo - b.billNo);
 
         if (filteredBills.length === 0) {
             alert("No bills found in the selected date range.");
@@ -1417,26 +1411,41 @@
 
         let wbout = XLSX.utils.book_new();
 
-        // Styles for xlsx-js-style
+        // Styles configuration for robust invoice tables
         const borderAll = {
-            top: { style: "thin", color: { rgb: "000000" } }, bottom: { style: "thin", color: { rgb: "000000" } },
-            left: { style: "thin", color: { rgb: "000000" } }, right: { style: "thin", color: { rgb: "000000" } }
+            top: { style: "medium", color: { rgb: "000000" } }, 
+            bottom: { style: "medium", color: { rgb: "000000" } },
+            left: { style: "medium", color: { rgb: "000000" } }, 
+            right: { style: "medium", color: { rgb: "000000" } }
+        };
+        const thinBorderAll = {
+            top: { style: "thin", color: { rgb: "000000" } }, 
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } }, 
+            right: { style: "thin", color: { rgb: "000000" } }
         };
         
-        const headerStyle = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "004b87" } }, alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
-        const dataStyle = { alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
+        const headerStyle = { font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12 }, fill: { fgColor: { rgb: "004b87" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll };
+        const dataStyle = { alignment: { horizontal: "center", vertical: "center" }, border: thinBorderAll };
         const dataStyleBold = { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" }, border: borderAll };
 
-        let EXPORT_PAGE_SIZE = 50;
-        let numPages = Math.ceil(filteredBills.length / EXPORT_PAGE_SIZE) || 1;
+        let maxBillNo = Math.max(...filteredBills.map(b => b.billNo));
+        let numPages = Math.ceil(maxBillNo / PAGE_SIZE) || 1;
+        
         let exportPageTotals = [];
         let totalQntyAll = 0;
         let totalAmountAll = 0;
 
+        // 3. Segment into strict ranges of 1-50, 51-100 based on Max Bill No available
         for (let i = 0; i < numPages; i++) {
-            let startIdx = i * EXPORT_PAGE_SIZE;
-            let pageBills = filteredBills.slice(startIdx, startIdx + EXPORT_PAGE_SIZE);
+            let startBill = i * PAGE_SIZE + 1;
+            let endBill = (i + 1) * PAGE_SIZE;
             
+            // Extract ONLY the bills falling within this strict range from the date-filtered array
+            let pageBills = filteredBills.filter(b => b.billNo >= startBill && b.billNo <= endBill);
+            
+            if(pageBills.length === 0) continue; // Skip generating sheet if the filter removed all entries in this range
+
             let sheetData = [["Bill No", "Date", "Vehicle No", "Fuel Type", "Quantity Ltr", "Rate", "Amount"]];
             let pQnty = 0, pAmount = 0;
             
@@ -1452,7 +1461,9 @@
             
             let ws = XLSX.utils.aoa_to_sheet(sheetData);
             
-            // Apply Custom Styles and Borders to the Data Pages
+            ws['!rows'] = [{hpt: 35}]; // Larger Header height
+            for(let R=1; R<sheetData.length; R++) ws['!rows'].push({hpt: 22});
+
             for (let R = 0; R < sheetData.length; ++R) {
                 for (let C = 0; C < sheetData[0].length; ++C) {
                     let cellRef = XLSX.utils.encode_cell({r: R, c: C});
@@ -1463,75 +1474,128 @@
                 }
             }
             
-            // Auto Cell Width Adjustments
             ws['!cols'] = [{wch: 12}, {wch: 15}, {wch: 18}, {wch: 15}, {wch: 15}, {wch: 12}, {wch: 15}];
             
-            let sheetName = `Bills ${pageBills[0].billNo}-${pageBills[pageBills.length-1].billNo}`;
+            let sheetName = `Bills ${startBill}-${endBill}`;
             XLSX.utils.book_append_sheet(wbout, ws, sheetName);
             
             let uniformRate = pageBills.every(b => b.rate === pageBills[0].rate) ? pageBills[0].rate : "Var.";
             exportPageTotals.push({ name: sheetName, q: pQnty, r: uniformRate, a: pAmount });
         }
 
-        // CREATE MASTER PAGE
+        // 4. CREATE BIG, INVOICE-STYLE MASTER PAGE
         let advance = parseFloat(document.getElementById('advancePaid').value) || 0;
         let preNet = totalAmountAll - advance;
         let finalNet = Math.round(preNet);
         let roundingValue = finalNet - preNet;
 
-        let dateRangeStr = (fromDate || toDate) ? `FILTER: ${fromDate ? fromDate : 'Any'} to ${toDate ? toDate : 'Any'}` : "CONSOLIDATED RECORD";
+        let dateRangeStr = (fromDate || toDate) ? `FILTERED DATE RANGE: ${fromDate ? fromDate : 'START'} to ${toDate ? toDate : 'END'}` : "CONSOLIDATED RECORD (ALL DATES)";
 
         let masterData = [
             ["M/S. BAHAR SERVICE STATION (CC-220994)", "", "", ""],
+            ["OFFICIAL RECORD: FOR REVIEW", "", "", ""],
             ["CONSOLIDATED DIESEL & LUB SUPPLY RECORD", "", "", ""],
             [dateRangeStr, "", "", ""],
             ["", "", "", ""],
-            ["PAGE REF", "QUANTITY LTR", "RATE", "AMOUNT"]
+            ["PAGE REFERENCE", "TOTAL QUANTITY (LTR)", "RATE APPLIED", "TOTAL AMOUNT (₹)"]
         ];
+
+        let startDataRow = 6; 
 
         exportPageTotals.forEach(p => { masterData.push([p.name, p.q, p.r, p.a]); });
         
+        let emptyRowIdx = masterData.length;
+        masterData.push(["", "", "", ""]);
+
+        let summaryStartRow = masterData.length;
         masterData.push(["GROSS TOTAL", totalQntyAll, "", totalAmountAll]);
-        masterData.push(["Rounding Off", "", "", roundingValue]);
-        masterData.push(["Less Advance", "", "", advance]);
-        masterData.push(["NET AMOUNT", "", "", finalNet]);
+        masterData.push(["Rounding Off (+/-)", "", "", roundingValue]);
+        masterData.push(["Less Advance Paid", "", "", advance]);
+        masterData.push(["EST. NET AMOUNT PAYABLE", "", "", finalNet]);
 
         let wsMaster = XLSX.utils.aoa_to_sheet(masterData);
         
-        // Merge Headers in the Master Page
+        // Merge Main Titles at the Top
         wsMaster['!merges'] = [
             { s: {r: 0, c: 0}, e: {r: 0, c: 3} },
             { s: {r: 1, c: 0}, e: {r: 1, c: 3} },
-            { s: {r: 2, c: 0}, e: {r: 2, c: 3} }
+            { s: {r: 2, c: 0}, e: {r: 2, c: 3} },
+            { s: {r: 3, c: 0}, e: {r: 3, c: 3} }
         ];
 
-        // Apply Styles, Centering, and Borders to the Master Page
+        // Merge Deduction Rows horizontally for cleaner box structure
+        wsMaster['!merges'].push({ s: {r: summaryStartRow + 1, c: 0}, e: {r: summaryStartRow + 1, c: 2} });
+        wsMaster['!merges'].push({ s: {r: summaryStartRow + 2, c: 0}, e: {r: summaryStartRow + 2, c: 2} });
+        wsMaster['!merges'].push({ s: {r: summaryStartRow + 3, c: 0}, e: {r: summaryStartRow + 3, c: 2} });
+
+        // Taller row heights to give "Invoice" feel
+        let masterRows = [
+            {hpt: 45}, // Brand Title
+            {hpt: 25}, // Subtitle 1
+            {hpt: 25}, // Subtitle 2
+            {hpt: 25}, // Date Range
+            {hpt: 15}, // Spacer
+            {hpt: 45}  // Table Header
+        ];
+
+        const masterDataStyle = { alignment: { horizontal: "center", vertical: "center" }, border: borderAll, font: { sz: 12 } };
+        const masterSummaryTitleStyle = { alignment: { horizontal: "right", vertical: "center" }, border: borderAll, font: { bold: true, sz: 13 } };
+        const masterNetStyle = { alignment: { horizontal: "right", vertical: "center" }, border: borderAll, font: { bold: true, sz: 16, color: { rgb: "000000" } }, fill: { fgColor: { rgb: "e2e8f0" } } };
+
         for (let R = 0; R < masterData.length; ++R) {
+            if (R >= startDataRow) masterRows.push({hpt: 35}); // Make invoice data rows very tall
+
             for (let C = 0; C < 4; ++C) {
                 let cellRef = XLSX.utils.encode_cell({r: R, c: C});
                 if (!wsMaster[cellRef]) wsMaster[cellRef] = { t: "s", v: "" };
                 
-                if (R === 0) wsMaster[cellRef].s = { font: { bold: true, sz: 16, color: { rgb: "004b87" } }, alignment: { horizontal: "center", vertical: "center" } };
-                else if (R === 1) wsMaster[cellRef].s = { font: { bold: true, sz: 12 }, alignment: { horizontal: "center", vertical: "center" } };
-                else if (R === 2) wsMaster[cellRef].s = { font: { italic: true }, alignment: { horizontal: "center", vertical: "center" } };
-                else if (R === 4) wsMaster[cellRef].s = headerStyle;
-                else if (R > 4) wsMaster[cellRef].s = dataStyleBold;
+                if (R === 0) wsMaster[cellRef].s = { font: { bold: true, sz: 18, color: { rgb: "004b87" } }, alignment: { horizontal: "center", vertical: "center" } };
+                else if (R === 1) wsMaster[cellRef].s = { font: { bold: true, sz: 14, color: { rgb: "333333" } }, alignment: { horizontal: "center", vertical: "center" } };
+                else if (R === 2) wsMaster[cellRef].s = { font: { bold: true, sz: 14 }, alignment: { horizontal: "center", vertical: "center" } };
+                else if (R === 3) wsMaster[cellRef].s = { font: { italic: true, sz: 12, color: { rgb: "64748b" } }, alignment: { horizontal: "center", vertical: "center" } };
+                else if (R === 5) wsMaster[cellRef].s = headerStyle;
+                else if (R >= startDataRow && R < emptyRowIdx) {
+                    wsMaster[cellRef].s = masterDataStyle;
+                    if(C===0) wsMaster[cellRef].s = { ...masterDataStyle, alignment: { horizontal: "left", vertical: "center" }, font: { bold: true } };
+                }
+                else if (R === summaryStartRow) {
+                    // Gross total line
+                    if(C===0) wsMaster[cellRef].s = { ...masterSummaryTitleStyle, alignment: { horizontal: "left", vertical: "center" } }; 
+                    else wsMaster[cellRef].s = masterDataStyle;
+                    wsMaster[cellRef].s.font = { bold: true, sz: 13 };
+                }
+                else if (R > summaryStartRow && R < masterData.length - 1) {
+                    // Deduction Lines
+                    if (C <= 2) wsMaster[cellRef].s = masterSummaryTitleStyle;
+                    else wsMaster[cellRef].s = { ...masterDataStyle, font: { bold: true, sz: 13 } };
+                }
+                else if (R === masterData.length - 1) {
+                    // Final Net Payable Line
+                    if (C <= 2) wsMaster[cellRef].s = masterNetStyle;
+                    else wsMaster[cellRef].s = { ...masterNetStyle, alignment: { horizontal: "center", vertical: "center" } };
+                }
             }
+            
+            // Fix hidden borders for merged areas
+            if(R === summaryStartRow) { wsMaster[XLSX.utils.encode_cell({r: R, c: 2})].s = masterDataStyle; }
         }
         
-        // Auto Cell Adjustments for Height and Width for Master Page
-        wsMaster['!cols'] = [{wch: 25}, {wch: 18}, {wch: 15}, {wch: 18}];
-        wsMaster['!rows'] = [{hpt: 30}, {hpt: 20}, {hpt: 20}];
+        wsMaster['!cols'] = [{wch: 35}, {wch: 22}, {wch: 18}, {wch: 25}];
+        wsMaster['!rows'] = masterRows;
 
-        // Build Final Excel File
+        // Compile Final Workbook
         let finalWb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(finalWb, wsMaster, "Master Admin Print");
+        XLSX.utils.book_append_sheet(finalWb, wsMaster, "Master Invoice");
         wbout.SheetNames.forEach(name => {
             XLSX.utils.book_append_sheet(finalWb, wbout.Sheets[name], name);
         });
 
+        // Dynamic Name based on Filter
         let exportFileName = "Bahar_Station_Admin_Log";
-        if(fromDate && toDate) exportFileName += `_${fromDate}_to_${toDate}`;
+        if(fromDate && toDate) exportFileName += `_from_${fromDate}_to_${toDate}`;
+        else if (fromDate) exportFileName += `_from_${fromDate}`;
+        else if (toDate) exportFileName += `_until_${toDate}`;
+
         XLSX.writeFile(finalWb, exportFileName + ".xlsx");
     }
 
